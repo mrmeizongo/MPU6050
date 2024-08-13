@@ -1,6 +1,6 @@
 #include "../src/MPU6050.h"
 
-#define MPU6050_ADDRESS 0x68 // Device address when ADO = 0
+#define MPU6050_ADDRESS 0x68 // Original device address when ADO = 0
 
 MPU6050 mpu6050;
 float ahrs_roll, ahrs_pitch, ahrs_yaw = 0.f;
