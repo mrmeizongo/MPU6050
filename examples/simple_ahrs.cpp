@@ -1,9 +1,5 @@
 #include "../src/MPU6050.h"
 
-#ifndef TwoWire_h
-#include <Wire.h>
-#endif
-
 #define MPU6050_ADDRESS 0x68
 
 float ahrs_roll, ahrs_pitch, ahrs_yaw = 0.f;
