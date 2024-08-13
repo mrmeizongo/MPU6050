@@ -71,14 +71,14 @@ int main()
 void printCalibrationValues(void)
 {
     Serial.println("< Calibration Parameters >");
-    Serial.println("accel bias [g]: ");
+    Serial.println("Accel Bias [g]: ");
     Serial.print(mpu6050.getAccBiasX() * 1000.f / (float)MPU6050::CALIB_ACCEL_SENSITIVITY);
     Serial.print(", ");
     Serial.print(mpu6050.getAccBiasY() * 1000.f / (float)MPU6050::CALIB_ACCEL_SENSITIVITY);
     Serial.print(", ");
     Serial.print(mpu6050.getAccBiasZ() * 1000.f / (float)MPU6050::CALIB_ACCEL_SENSITIVITY);
     Serial.println();
-    Serial.println("gyro bias [deg/s]: ");
+    Serial.println("Gyro Bias [deg/s]: ");
     Serial.print(mpu6050.getGyroBiasX() / (float)MPU6050::CALIB_GYRO_SENSITIVITY);
     Serial.print(", ");
     Serial.print(mpu6050.getGyroBiasY() / (float)MPU6050::CALIB_GYRO_SENSITIVITY);
