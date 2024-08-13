@@ -13,12 +13,12 @@ void printCalibrationValues(void);
 
 int main()
 {
+    // If using in an Arduino environment this part of the code should be in setup()
     Wire.begin();
     Serial.begin(9600);
     while (!Serial)
         ;
 
-    // If using in an Arduino environment this part of the code should be in setup()
     if (!mpu6050.setup(MPU6050_ADDRESS))
     { // change to your own address
         for (;;)
