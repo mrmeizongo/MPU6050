@@ -2,6 +2,7 @@
 
 #define MPU6050_ADDRESS 0x68
 
+MPU6050 mpu6050;
 float ahrs_roll, ahrs_pitch, ahrs_yaw = 0.f;
 float gyroX, gyroY, gyroZ = 0.f;
 
