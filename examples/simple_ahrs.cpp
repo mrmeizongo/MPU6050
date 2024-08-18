@@ -6,8 +6,6 @@ MPU6050 mpu6050;
 float ahrs_roll, ahrs_pitch, ahrs_yaw = 0.f;
 float gyroX, gyroY, gyroZ = 0.f;
 
-void printCalibrationValues(void);
-
 int main()
 {
     // If using in an Arduino environment this part of the code should be in setup()
@@ -18,19 +16,15 @@ int main()
 
     if (!mpu6050.setup(MPU6050_ADDRESS))
     { // change to your own address
-        for (;;)
-        {
-            Serial.println("No MPU found! Check connection");
-            delay(1000);
-        }
+        Serial.println("No MPU found! Check connection");
+        while (true)
+            ;
     }
 
     // To display debug message set verbose to true
     mpu6050.verbose(true);
     // Calibrate MPU6050 accelerometer and gyro
     mpu6050.calibrateAccelGyro();
-    // Print values from calibration
-    printCalibrationValues();
 
     // This part of the code should be in loop()
     for (;;)
@@ -63,23 +57,4 @@ int main()
             Serial.println();
         }
     }
-}
-
-void printCalibrationValues(void)
-{
-    Serial.println("< Calibration Parameters >");
-    Serial.println("Accel Bias [g]: ");
-    Serial.print(mpu6050.getAccBiasX() * 1000.f / (float)MPU6050::CALIB_ACCEL_SENSITIVITY);
-    Serial.print(", ");
-    Serial.print(mpu6050.getAccBiasY() * 1000.f / (float)MPU6050::CALIB_ACCEL_SENSITIVITY);
-    Serial.print(", ");
-    Serial.print(mpu6050.getAccBiasZ() * 1000.f / (float)MPU6050::CALIB_ACCEL_SENSITIVITY);
-    Serial.println();
-    Serial.println("Gyro Bias [deg/s]: ");
-    Serial.print(mpu6050.getGyroBiasX() / (float)MPU6050::CALIB_GYRO_SENSITIVITY);
-    Serial.print(", ");
-    Serial.print(mpu6050.getGyroBiasY() / (float)MPU6050::CALIB_GYRO_SENSITIVITY);
-    Serial.print(", ");
-    Serial.print(mpu6050.getGyroBiasZ() / (float)MPU6050::CALIB_GYRO_SENSITIVITY);
-    Serial.println();
 }
