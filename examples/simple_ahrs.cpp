@@ -32,7 +32,7 @@ int main()
 
 #if defined(CALIBRATE)
     // To display calibration bias values set verbose to true
-    // Record the bias values and set them to the XXX_X_BIAS definitions above, then uncomment CALIBRATE
+    // Record the bias values and set them to the XXX_X_BIAS definitions above, then comment CALIBRATE
     mpu6050.verbose(false);
     mpu6050.calibrateAccelGyro();
 #else
