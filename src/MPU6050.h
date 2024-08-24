@@ -3,7 +3,7 @@
 #define _MPU6050_H
 
 #include <Wire.h>
-
+#include <Arduino.h>
 #include "MPU6050RegisterMap.h"
 #include "QuaternionFilter.h"
 
@@ -70,7 +70,6 @@ class MPU6050_
     // Calibration Parameters
     float acc_bias[3]{0.0f, 0.0f, 0.0f};  // acc calibration value in ACCEL_FS_SEL: 2g
     float gyro_bias[3]{0.0f, 0.0f, 0.0f}; // gyro calibration value in GYRO_FS_SEL: 250dps
-    float magnetic_declination = -10.43f; // Camden Wyo, DE 18th Aug 2024
 
     // Temperature
     int16_t temperature_count{0}; // temperature raw count output
@@ -364,7 +363,6 @@ public:
         rpy[0] *= 57.29577951;
         rpy[1] *= 57.29577951;
         rpy[2] *= 57.29577951;
-        rpy[2] += magnetic_declination;
         if (rpy[2] >= +180.f)
             rpy[2] -= 360.f;
         else if (rpy[2] < -180.f)

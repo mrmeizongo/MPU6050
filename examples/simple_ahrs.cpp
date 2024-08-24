@@ -1,5 +1,14 @@
 #include "../src/MPU6050.h"
 
+#define ACC_X_BIAS 919.48f
+#define ACC_Y_BIAS -437.80f
+#define ACC_Z_BIAS 3838.37f
+#define GYRO_X_BIAS -344.23f
+#define GYRO_Y_BIAS -31.68f
+#define GYRO_Z_BIAS -105.15f
+
+#define CALIBRATE
+
 #define MPU6050_ADDRESS 0x68 // Original device address when ADO = 0
 
 MPU6050 mpu6050;
@@ -21,10 +30,14 @@ int main()
             ;
     }
 
+#if defined(CALIBRATE)
     // To display debug message set verbose to true
-    mpu6050.verbose(true);
-    // Calibrate MPU6050 accelerometer and gyro
+    mpu6050.verbose(false);
     mpu6050.calibrateAccelGyro();
+#else
+    mpu6050.setAccBias(ACC_X_BIAS, ACC_Y_BIAS, ACC_Z_BIAS);
+    mpu6050.setGyroBias(GYRO_X_BIAS, GYRO_Y_BIAS, GYRO_Z_BIAS);
+#endif
 
     // This part of the code should be in loop()
     for (;;)
