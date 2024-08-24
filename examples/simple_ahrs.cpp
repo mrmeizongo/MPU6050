@@ -9,7 +9,7 @@
 
 #define CALIBRATE
 
-#define MPU6050_ADDRESS 0x68 // Original device address when ADO = 0
+#define MPU6050_ADDRESS 0x68 // Original device address when ADO = 0, change to your own address
 
 MPU6050 mpu6050;
 float ahrs_roll, ahrs_pitch, ahrs_yaw = 0.f;
@@ -24,14 +24,14 @@ int main()
         ;
 
     if (!mpu6050.setup(MPU6050_ADDRESS))
-    { // change to your own address
+    {
         Serial.println("No MPU found! Check connection");
-        while (true)
+        for (;;)
             ;
     }
 
 #if defined(CALIBRATE)
-    // To display calibrate bias values set verbose to true
+    // To display calibration bias values set verbose to true
     mpu6050.verbose(false);
     mpu6050.calibrateAccelGyro();
 #else
