@@ -31,7 +31,7 @@ int main()
     }
 
 #if defined(CALIBRATE)
-    // To display debug message set verbose to true
+    // To display calibrate bias values set verbose to true
     mpu6050.verbose(false);
     mpu6050.calibrateAccelGyro();
 #else
