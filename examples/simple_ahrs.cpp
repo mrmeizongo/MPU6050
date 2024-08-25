@@ -17,7 +17,7 @@ float gyroX, gyroY, gyroZ = 0.f;
 
 int main()
 {
-    // If using in an Arduino environment this part of the code should be in setup()
+    // If using in the Arduino IDE this part of the code should be in setup()
     Wire.begin();
     Serial.begin(9600);
     while (!Serial)
