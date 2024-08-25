@@ -9,7 +9,7 @@
 
 #define CALIBRATE
 
-#define MPU6050_ADDRESS 0x68 // Original device address when ADO = 0, change to your own address
+#define MPU6050_ADDRESS 0x68 // Original device address when ADO = 0
 
 MPU6050 mpu6050;
 float ahrs_roll, ahrs_pitch, ahrs_yaw = 0.f;
@@ -23,6 +23,8 @@ int main()
     while (!Serial)
         ;
 
+    // Calling setup without an address as argument  uses the default address of 0x68 for the MPU6050
+    // Change to your own address
     if (!mpu6050.setup(MPU6050_ADDRESS))
     {
         Serial.println("No MPU found! Check connection");
