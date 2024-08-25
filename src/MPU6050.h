@@ -34,7 +34,7 @@ enum class FIFO_SAMPLE_RATE : uint8_t
     SMPL_125HZ,
 };
 
-enum class GYRO_DLPF_CFG : uint8_t
+enum class ACCEL_GYRO_DLPF_CFG : uint8_t
 {
     DLPF_256HZ,
     DLPF_188HZ,
@@ -53,7 +53,7 @@ struct MPU6050Setting
     ACCEL_FS_SEL accel_fs_sel{ACCEL_FS_SEL::A2G};
     GYRO_FS_SEL gyro_fs_sel{GYRO_FS_SEL::G250DPS};
     FIFO_SAMPLE_RATE fifo_sample_rate{FIFO_SAMPLE_RATE::SMPL_250HZ};
-    GYRO_DLPF_CFG gyro_dlpf_cfg{GYRO_DLPF_CFG::DLPF_42HZ};
+    ACCEL_GYRO_DLPF_CFG accel_gyro_dlpf_cfg{ACCEL_GYRO_DLPF_CFG::DLPF_42HZ};
 };
 
 template <typename WireType>
@@ -307,7 +307,7 @@ private:
         // Aiming for the higher end gives us 220Hz and 210Hz(44Hz * 5, 42Hz x 5) so we're going to use 250Hz for our sample rate
         // Setting DLPF_CFG = bits 2:0 = 011; this limits the sample rate to 1000 Hz for both accelerometer and gyroscope
         // With the MPU6050, it is possible to get gyro sample rates of 8 kHz, or 1 kHz
-        uint8_t mpu_config = (uint8_t)setting.gyro_dlpf_cfg;
+        uint8_t mpu_config = (uint8_t)setting.accel_gyro_dlpf_cfg;
         write_byte(MPU_CONFIG, mpu_config);
 
         // Set sample rate = gyroscope output rate/(1 + SMPLRT_DIV)
