@@ -46,8 +46,6 @@ enum class ACCEL_GYRO_DLPF_CFG : uint8_t
     DLPF_RESERVED,
 };
 
-static constexpr uint8_t MPU6050_WHOAMI_DEFAULT_VALUE{0x68};
-
 struct MPU6050Setting
 {
     ACCEL_FS_SEL accel_fs_sel{ACCEL_FS_SEL::A2G};
@@ -59,43 +57,6 @@ struct MPU6050Setting
 template <typename WireType>
 class MPU6050_
 {
-    static constexpr uint8_t MPU6050_DEFAULT_ADDRESS{0x68}; // Device address when ADO = 0
-    uint8_t mpu_i2c_addr;
-
-    // settings
-    MPU6050Setting setting;
-    float acc_resolution{0.f};  // scale resolutions per LSB for the sensors
-    float gyro_resolution{0.f}; // scale resolutions per LSB for the sensors
-
-    // Calibration Parameters
-    float acc_bias[3]{0.0f, 0.0f, 0.0f};  // acc calibration value in ACCEL_FS_SEL: 2g
-    float gyro_bias[3]{0.0f, 0.0f, 0.0f}; // gyro calibration value in GYRO_FS_SEL: 250dps
-
-    // Temperature
-    int16_t temperature_count{0}; // temperature raw count output
-    float temperature{0.f};       // Stores the real internal chip temperature in degrees Celsius
-
-    // Self Test
-    float self_test_result[6]{0.f}; // holds results of gyro and accelerometer self test
-
-    // IMU Data
-    float a[3]{0.f, 0.f, 0.f};
-    float g[3]{0.f, 0.f, 0.f};
-    float q[4] = {1.0f, 0.0f, 0.0f, 0.0f}; // vector to hold quaternion
-    float rpy[3]{0.f, 0.f, 0.f};
-    float lin_acc[3]{0.f, 0.f, 0.f}; // linear acceleration (acceleration with gravity component subtracted)
-    QuaternionFilter quat_filter;
-    size_t n_filter_iter{1};
-
-    // Other settings
-    bool has_connected{false};
-    bool b_ahrs{true};
-    bool b_verbose{false};
-
-    // I2C
-    WireType *wire;
-    uint8_t i2c_err_;
-
 public:
     static constexpr uint16_t CALIB_GYRO_SENSITIVITY{131};    // LSB/degrees/sec
     static constexpr uint16_t CALIB_ACCEL_SENSITIVITY{16384}; // LSB/g
@@ -175,14 +136,9 @@ public:
         return (c & 0x40) == 0x40;
     }
 
-    bool available()
-    {
-        return has_connected && (read_byte(INT_STATUS) & 0x01);
-    }
-
     bool update()
     {
-        if (!available())
+        if (!(has_connected && (read_byte(INT_STATUS) & 0x01)))
             return false;
 
         update_accel_gyro();
@@ -281,6 +237,43 @@ public:
     }
 
 private:
+    static constexpr uint8_t MPU6050_DEFAULT_ADDRESS{0x68}; // Device address when ADO = 0
+    uint8_t mpu_i2c_addr;
+
+    // settings
+    MPU6050Setting setting;
+    float acc_resolution{0.f};  // scale resolutions per LSB for the sensors
+    float gyro_resolution{0.f}; // scale resolutions per LSB for the sensors
+
+    // Calibration Parameters
+    float acc_bias[3]{0.0f, 0.0f, 0.0f};  // acc calibration value in ACCEL_FS_SEL: 2g
+    float gyro_bias[3]{0.0f, 0.0f, 0.0f}; // gyro calibration value in GYRO_FS_SEL: 250dps
+
+    // Temperature
+    int16_t temperature_count{0}; // temperature raw count output
+    float temperature{0.f};       // Stores the real internal chip temperature in degrees Celsius
+
+    // Self Test
+    float self_test_result[6]{0.f}; // holds results of gyro and accelerometer self test
+
+    // IMU Data
+    float a[3]{0.f, 0.f, 0.f};
+    float g[3]{0.f, 0.f, 0.f};
+    float q[4] = {1.0f, 0.0f, 0.0f, 0.0f}; // vector to hold quaternion
+    float rpy[3]{0.f, 0.f, 0.f};
+    float lin_acc[3]{0.f, 0.f, 0.f}; // linear acceleration (acceleration with gravity component subtracted)
+    QuaternionFilter quat_filter;
+    size_t n_filter_iter{1};
+
+    // Other settings
+    bool has_connected{false};
+    bool b_ahrs{true};
+    bool b_verbose{false};
+
+    // I2C
+    WireType *wire;
+    uint8_t i2c_err_;
+
     void initMPU6050()
     {
         acc_resolution = get_acc_resolution(setting.accel_fs_sel);
@@ -295,7 +288,7 @@ private:
         delay(100);                   // Wait for all registers to reset
 
         // get stable time source
-        write_byte(PWR_MGMT_1, 0x01); // Auto select clock source to be PLL gyroscope reference if ready else
+        write_byte(PWR_MGMT_1, 0x01); // Auto select clock source to be PLL gyroscope reference
         delay(200);
 
         // Configure Gyro and Accelerometer
@@ -306,13 +299,14 @@ private:
         // the frequency might not be enough in real-world applications such as robotics or drones.
         // Aiming for the higher end gives us 220Hz and 210Hz(44Hz * 5, 42Hz x 5) so we're going to use 250Hz for our sample rate
         // Setting DLPF_CFG = bits 2:0 = 011; this limits the sample rate to 1000 Hz for both accelerometer and gyroscope
+        // This is further reduced by a factor of 4 to 250 Hz because of the SMPLRT_DIV setting
         // With the MPU6050, it is possible to get gyro sample rates of 8 kHz, or 1 kHz
         uint8_t mpu_config = (uint8_t)setting.accel_gyro_dlpf_cfg;
         write_byte(MPU_CONFIG, mpu_config);
 
         // Set sample rate = gyroscope output rate/(1 + SMPLRT_DIV)
         uint8_t sample_rate = (uint8_t)setting.fifo_sample_rate;
-        write_byte(SMPLRT_DIV, sample_rate); // Use a 250 Hz rate; a rate consistent with the filter update rate
+        write_byte(SMPLRT_DIV, sample_rate); // Use a 250Hz rate; a rate consistent with the filter update rate
                                              // determined inset in CONFIG above
 
         // Set gyroscope full scale range
@@ -330,9 +324,6 @@ private:
         c = c | (uint8_t(setting.accel_fs_sel) << 3); // Set full scale range for the accelerometer
         write_byte(ACCEL_CONFIG, c);                  // Write new ACCEL_CONFIG register value
 
-        // The accelerometer, gyro, and thermometer are set to 1 kHz sample rates,
-        // but all these rates are further reduced by a factor of 4 to 250 Hz because of the SMPLRT_DIV setting
-
         // Configure Interrupts and Bypass Enable
         // Set interrupt pin active high, push-pull, hold interrupt pin level HIGH until interrupt cleared,
         // clear on read of INT_STATUS, and enable I2C_BYPASS_EN so additional chips
@@ -342,7 +333,6 @@ private:
         delay(100);
     }
 
-public:
     void update_rpy(float qw, float qx, float qy, float qz)
     {
         // Define output variables from updated quaternion---these are Tait-Bryan angles, commonly used in aircraft orientation.
@@ -395,7 +385,6 @@ public:
         g[2] = ((float)raw_acc_gyro_data[6] - gyro_bias[2]) * gyro_resolution;
     }
 
-private:
     void read_accel_gyro(int16_t *destination)
     {
         uint8_t raw_data[14];                                                // x/y/z accel register data stored here
@@ -409,7 +398,6 @@ private:
         destination[6] = ((int16_t)raw_data[12] << 8) | (int16_t)raw_data[13];
     }
 
-private:
     int16_t read_temperature_data()
     {
         uint8_t raw_data[2];                              // x/y/z gyro register data stored here
