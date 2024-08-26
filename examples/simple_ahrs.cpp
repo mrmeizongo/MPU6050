@@ -23,9 +23,11 @@ int main()
     while (!Serial)
         ;
 
-    // Calling setup without an address as argument  uses the default address of 0x68 for the MPU6050
+    MPU6050Setting setting = MPU6050Setting(ACCEL_FS_SEL::A2G, GYRO_FS_SEL::G250DPS, SAMPLE_RATE::SMPL_250HZ, ACCEL_GYRO_DLPF_CFG::DLPF_44HZx42HZ);
+
+    // Calling setup without an address as argument  uses the default address of 0x68 for the MPU6050 and default settings. See MPU6050.h for more information
     // Change to your own address
-    if (!mpu6050.setup(MPU6050_ADDRESS))
+    if (!mpu6050.setup(MPU6050_ADDRESS, setting))
     {
         Serial.println("No MPU found! Check connection");
         for (;;)
