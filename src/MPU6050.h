@@ -8,7 +8,7 @@
 #include "QuaternionFilter.h"
 
 // Accel sensitivity - A2G (most sensitive)
-enum class ACCEL_FS_SEL
+enum class ACCEL_FS_SEL : uint8_t
 {
     A2G,
     A4G,
@@ -16,8 +16,8 @@ enum class ACCEL_FS_SEL
     A16G
 };
 
-// Gyro sensitivity - G250DPS (most sensitivity)
-enum class GYRO_FS_SEL
+// Gyro sensitivity - G250DPS (most sensitive)
+enum class GYRO_FS_SEL : uint8_t
 {
     G250DPS,
     G500DPS,
@@ -28,7 +28,7 @@ enum class GYRO_FS_SEL
 // Sample Rate = Gyroscope Output Rate / (1 + SMPLRT_DIV)
 // This assumes ACCEL_GYRO_DLPF_CFG is set to DLPF_184HZx188HZ - DLPF_5HZx5HZ, setting gyro and accelerometer output to 1kHz
 // If ACCEL_GYRO_DLPF_CFG is set to DLPF_260HZx256HZ or DLPF_RESERVED, gyro output and Sample Rate is 8kHz, accelerometer is still 1kHz
-enum SAMPLE_RATE : uint8_t
+enum class SAMPLE_RATE : uint8_t
 {
     SMPL_1000HZ = 0,
     SMPL_500HZ,
@@ -41,7 +41,7 @@ enum SAMPLE_RATE : uint8_t
 };
 
 // AccelxGyro filter Bandwidth
-enum ACCEL_GYRO_DLPF_CFG : uint8_t
+enum class ACCEL_GYRO_DLPF_CFG : uint8_t
 {
     DLPF_260HZx256HZ = 0, // Accel delay 0ms, Gyro delay 0.98ms
     DLPF_184HZx188HZ,     // Accel delay 2.0ms, Gyro delay 1.9ms
@@ -462,24 +462,31 @@ private:
 
         // Configure MPU6050 gyro and accelerometer for bias calculation
         write_byte(MPU_CONFIG, 0x01);   // Set gyro low-pass filter to 188 Hz and accel to 184 Hz
-        write_byte(SMPLRT_DIV, 0x00);   // Set sample rate to 1 kHz
+        write_byte(SMPLRT_DIV, 0x00);   // Set sample rate to 1 kHz (1 sample/ms)
         write_byte(GYRO_CONFIG, 0x00);  // Set gyro full-scale to 250 degrees per second, maximum sensitivity
         write_byte(ACCEL_CONFIG, 0x00); // Set accelerometer full-scale to 2 g, maximum sensitivity
 
         // Configure FIFO to capture accelerometer and gyro data for bias calculation
         write_byte(USER_CTRL, 0x40); // Enable FIFO
         write_byte(FIFO_EN, 0x78);   // Enable gyro and accelerometer sensors for FIFO  (max size 1024 bytes in MPU-6050)
-        delay(80);                   // accumulate 80 samples in 80 milliseconds = 960 bytes to prevent FIFO overflow
+        delay(85);                   // Accumulate 85 samples in 85 milliseconds = 1020 bytes to prevent FIFO overflow
     }
 
     void collect_acc_gyro_data_to(float *a_bias, float *g_bias)
     {
-        // At end of sample accumulation, turn off FIFO sensor read
         uint8_t data[12];                     // data array to hold accelerometer and gyro x, y, z, data
-        write_byte(FIFO_EN, 0x00);            // Disable gyro and accelerometer sensors for FIFO
+        write_byte(FIFO_EN, 0x00);            // Disable gyro and accelerometer sensors for FIFO after samples collected
         read_bytes(FIFO_COUNTH, 2, &data[0]); // read FIFO sample count
         uint16_t fifo_count = ((uint16_t)data[0] << 8) | data[1];
         uint16_t packet_count = fifo_count / 12; // How many sets of full gyro and accelerometer data for averaging
+        if (b_verbose)
+        {
+            Serial.print("Accel & Gyro FIFO packets obtained: ");
+            Serial.println(fifo_count);
+            Serial.print("Sets of ");
+            Serial.print(packet_count);
+            Serial.println(" full accel and gyro data acquired for bias calculation.");
+        }
 
         for (uint16_t ii = 0; ii < packet_count; ii++)
         {
