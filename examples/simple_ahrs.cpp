@@ -1,11 +1,11 @@
 #include "../src/MPU6050.h"
 
-#define ACC_X_BIAS 919.48f
-#define ACC_Y_BIAS -437.80f
-#define ACC_Z_BIAS 3838.37f
-#define GYRO_X_BIAS -344.23f
-#define GYRO_Y_BIAS -31.68f
-#define GYRO_Z_BIAS -105.15f
+#define ACC_X_BIAS 0.0f
+#define ACC_Y_BIAS 0.0f
+#define ACC_Z_BIAS 0.0f
+#define GYRO_X_BIAS 0.0f
+#define GYRO_Y_BIAS 0.0f
+#define GYRO_Z_BIAS 0.0f
 
 #define CALIBRATE
 
