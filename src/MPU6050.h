@@ -60,7 +60,7 @@ struct MPU6050Setting
     SAMPLE_RATE sample_rate;
     ACCEL_GYRO_DLPF_CFG accel_gyro_dlpf_cfg;
 
-    MPU6050Setting()
+    MPU6050Setting(void)
         : accel_fs_sel{ACCEL_FS_SEL::A2G}, gyro_fs_sel{GYRO_FS_SEL::G250DPS},
           sample_rate{SAMPLE_RATE::SMPL_1000HZ}, accel_gyro_dlpf_cfg{ACCEL_GYRO_DLPF_CFG::DLPF_260HZx256HZ} {}
 
@@ -157,47 +157,51 @@ public:
             return false;
 
         update_accel_gyro();
+        update_temperature();
 
-        /*
-         * Madgwick function needs to be fed North, East, and Down direction like
-         * (AN, AE, AD, GN, GE, GD)
-         * Accel and Gyro direction is Right-Hand, X-Forward, Z-Up
-         * Magneto direction is Right-Hand, Y-Forward, Z-Down
-         * So to adopt to the general Aircraft coordinate system (Right-Hand, X-Forward, Z-Down),
-         * we need to feed (ax, -ay, -az, gx, -gy, -gz) but we pass (-ax, ay, az, gx, -gy, -gz)
-         * because gravity is by convention positive down, we need to invert the accel data.
-         * Get quaternion based on aircraft coordinate (Right-Hand, X-Forward, Z-Down)
-         * Gyro will be converted from [deg/s] to [rad/s] inside of this function.
-         */
-
-        float an = -a[0];
-        float ae = +a[1];
-        float ad = +a[2];
-        float gn = +g[0] * DEG_TO_RAD;
-        float ge = -g[1] * DEG_TO_RAD;
-        float gd = -g[2] * DEG_TO_RAD;
-
-        for (size_t i = 0; i < n_filter_iter; ++i)
+        if (b_ahrs)
         {
-            quat_filter.update(an, ae, ad, gn, ge, gd, q);
-        }
+            /*
+             * Madgwick function needs to be fed North, East, and Down direction like
+             * (AN, AE, AD, GN, GE, GD)
+             * Accel and Gyro direction is Right-Hand, X-Forward, Z-Up
+             * Magneto direction is Right-Hand, Y-Forward, Z-Down
+             * So to adopt to the general Aircraft coordinate system (Right-Hand, X-Forward, Z-Down),
+             * we need to feed (ax, -ay, -az, gx, -gy, -gz) but we pass (-ax, ay, az, gx, -gy, -gz)
+             * because gravity is by convention positive down, we need to invert the accel data.
+             * Get quaternion based on aircraft coordinate (Right-Hand, X-Forward, Z-Down)
+             * Gyro will be converted from [deg/s] to [rad/s] inside of this function.
+             */
 
-        update_rpy(q[0], q[1], q[2], q[3]);
+            float an = -a[0];
+            float ae = +a[1];
+            float ad = +a[2];
+            float gn = +g[0] * DEG_TO_RAD;
+            float ge = -g[1] * DEG_TO_RAD;
+            float gd = -g[2] * DEG_TO_RAD;
+
+            for (size_t i = 0; i < n_filter_iter; ++i)
+            {
+                quat_filter.update(an, ae, ad, gn, ge, gd, q);
+            }
+
+            update_rpy(q[0], q[1], q[2], q[3]);
+        }
         return true;
     }
 
-    float getRoll() const { return rpy[0]; }
-    float getPitch() const { return rpy[1]; }
-    float getYaw() const { return rpy[2]; }
+    float getRoll() const { return b_ahrs ? rpy[0] : 0.f; }
+    float getPitch() const { return b_ahrs ? rpy[1] : 0.f; }
+    float getYaw() const { return b_ahrs ? rpy[2] : 0.f; }
 
-    float getEulerX() const { return rpy[0]; }
-    float getEulerY() const { return -rpy[1]; }
-    float getEulerZ() const { return -rpy[2]; }
+    float getEulerX() const { return b_ahrs ? rpy[0] : 0.f; }
+    float getEulerY() const { return b_ahrs ? -rpy[1] : 0.f; }
+    float getEulerZ() const { return b_ahrs ? -rpy[2] : 0.f; }
 
+    float getQuaternionW() const { return q[0]; }
     float getQuaternionX() const { return q[1]; }
     float getQuaternionY() const { return q[2]; }
     float getQuaternionZ() const { return q[3]; }
-    float getQuaternionW() const { return q[0]; }
 
     float getAcc(const uint8_t i) const { return (i < 3) ? a[i] : 0.f; }
     float getGyro(const uint8_t i) const { return (i < 3) ? g[i] : 0.f; }
@@ -374,34 +378,36 @@ private:
 
     void update_accel_gyro()
     {
-        int16_t raw_acc_gyro_data[7];       // used to read all 14 bytes at once from the MPU6050 accel/gyro
+        int16_t raw_acc_gyro_data[6];       // holds 12 bytes from the MPU6050 accel/gyro data register
         read_accel_gyro(raw_acc_gyro_data); // INT cleared on any read
 
-        // Now we'll calculate the accleration value into actual g's
+        // Now we'll transform the acceleration value into actual g's
         a[0] = ((float)raw_acc_gyro_data[0] - acc_bias[0]) * acc_resolution; // get actual g value, this depends on scale being set
         a[1] = ((float)raw_acc_gyro_data[1] - acc_bias[1]) * acc_resolution;
         a[2] = ((float)raw_acc_gyro_data[2] - acc_bias[2]) * acc_resolution;
 
-        temperature_count = raw_acc_gyro_data[3];               // Read the adc values
-        temperature = (float)(temperature_count / 340) + 36.53; // Temperature in degrees Centigrade
+        // Transform the gyro values into actual degrees per second
+        g[0] = ((float)raw_acc_gyro_data[3] - gyro_bias[0]) * gyro_resolution; // get actual gyro value, this depends on scale being set
+        g[1] = ((float)raw_acc_gyro_data[4] - gyro_bias[1]) * gyro_resolution;
+        g[2] = ((float)raw_acc_gyro_data[5] - gyro_bias[2]) * gyro_resolution;
+    }
 
-        // Calculate the gyro value into actual degrees per second
-        g[0] = ((float)raw_acc_gyro_data[4] - gyro_bias[0]) * gyro_resolution; // get actual gyro value, this depends on scale being set
-        g[1] = ((float)raw_acc_gyro_data[5] - gyro_bias[1]) * gyro_resolution;
-        g[2] = ((float)raw_acc_gyro_data[6] - gyro_bias[2]) * gyro_resolution;
+    void update_temperature()
+    {
+        temperature_count = read_temperature_data();            // Read the adc values
+        temperature = (float)(temperature_count / 340) + 36.53; // Temperature in degrees centigrade
     }
 
     void read_accel_gyro(int16_t *destination)
     {
         uint8_t raw_data[14];                                                // x/y/z accel register data stored here
-        read_bytes(ACCEL_XOUT_H, 14, &raw_data[0]);                          // Read the 14 raw data registers into data array
+        read_bytes(ACCEL_XOUT_H, 14, &raw_data[0]);                          // Read the 14 raw data registers into data array, register data 6 & 7 not used
         destination[0] = ((int16_t)raw_data[0] << 8) | (int16_t)raw_data[1]; // Turn the MSB and LSB into a signed 16-bit value
         destination[1] = ((int16_t)raw_data[2] << 8) | (int16_t)raw_data[3];
         destination[2] = ((int16_t)raw_data[4] << 8) | (int16_t)raw_data[5];
-        destination[3] = ((int16_t)raw_data[6] << 8) | (int16_t)raw_data[7];
-        destination[4] = ((int16_t)raw_data[8] << 8) | (int16_t)raw_data[9];
-        destination[5] = ((int16_t)raw_data[10] << 8) | (int16_t)raw_data[11];
-        destination[6] = ((int16_t)raw_data[12] << 8) | (int16_t)raw_data[13];
+        destination[3] = ((int16_t)raw_data[8] << 8) | (int16_t)raw_data[9];
+        destination[4] = ((int16_t)raw_data[10] << 8) | (int16_t)raw_data[11];
+        destination[5] = ((int16_t)raw_data[12] << 8) | (int16_t)raw_data[13];
     }
 
     int16_t read_temperature_data()
