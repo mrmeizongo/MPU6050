@@ -336,9 +336,9 @@ private:
 
         // Configure Interrupts and Bypass Enable
         // Set interrupt pin active high, push-pull, hold interrupt pin level HIGH until interrupt cleared,
-        // clear INT_STATUS on any read operation, and enable I2C_BYPASS_EN so additional chips
+        // clear INT_STATUS when INT_STATUS is read, and enable I2C_BYPASS_EN so additional chips
         // can join the I2C bus and all can be controlled by the Arduino as master
-        write_byte(INT_PIN_CFG, 0x32);
+        write_byte(INT_PIN_CFG, 0x20);
         write_byte(INT_ENABLE, 0x01); // Enable data ready (bit 0) interrupt
         delay(100);
     }
