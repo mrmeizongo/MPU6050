@@ -93,16 +93,15 @@ public:
         if (isConnected())
         {
             initMPU6050();
+            has_connected = true;
         }
         else
         {
             if (b_verbose)
                 Serial.println("Could not connect to MPU6050");
             has_connected = false;
-            return false;
         }
-        has_connected = true;
-        return true;
+        return has_connected;
     }
 
     void sleep(bool b)
@@ -157,51 +156,48 @@ public:
             return false;
 
         update_accel_gyro();
-        update_temperature();
+        // update_temperature();
 
-        if (b_ahrs)
+        /*
+         * Madgwick function needs to be fed North, East, and Down direction like
+         * (AN, AE, AD, GN, GE, GD)
+         * Accel and Gyro direction is Right-Hand, X-Forward, Z-Up
+         * Magneto direction is Right-Hand, Y-Forward, Z-Down
+         * So to adopt to the general Aircraft coordinate system (Right-Hand, X-Forward, Z-Down),
+         * we need to feed (ax, -ay, -az, gx, -gy, -gz) but we pass (-ax, ay, az, gx, -gy, -gz)
+         * because gravity is by convention positive down, we need to invert the accel data.
+         * Get quaternion based on aircraft coordinate (Right-Hand, X-Forward, Z-Down)
+         * Gyro will be converted from [deg/s] to [rad/s] inside of this function.
+         */
+
+        float an = -a[0];
+        float ae = +a[1];
+        float ad = +a[2];
+        float gn = +g[0] * DEG_TO_RAD;
+        float ge = -g[1] * DEG_TO_RAD;
+        float gd = -g[2] * DEG_TO_RAD;
+
+        for (size_t i = 0; i < n_filter_iter; ++i)
         {
-            /*
-             * Madgwick function needs to be fed North, East, and Down direction like
-             * (AN, AE, AD, GN, GE, GD)
-             * Accel and Gyro direction is Right-Hand, X-Forward, Z-Up
-             * Magneto direction is Right-Hand, Y-Forward, Z-Down
-             * So to adopt to the general Aircraft coordinate system (Right-Hand, X-Forward, Z-Down),
-             * we need to feed (ax, -ay, -az, gx, -gy, -gz) but we pass (-ax, ay, az, gx, -gy, -gz)
-             * because gravity is by convention positive down, we need to invert the accel data.
-             * Get quaternion based on aircraft coordinate (Right-Hand, X-Forward, Z-Down)
-             * Gyro will be converted from [deg/s] to [rad/s] inside of this function.
-             */
-
-            float an = -a[0];
-            float ae = +a[1];
-            float ad = +a[2];
-            float gn = +g[0] * DEG_TO_RAD;
-            float ge = -g[1] * DEG_TO_RAD;
-            float gd = -g[2] * DEG_TO_RAD;
-
-            for (size_t i = 0; i < n_filter_iter; ++i)
-            {
-                quat_filter.update(an, ae, ad, gn, ge, gd, q);
-            }
-
-            update_rpy(q[0], q[1], q[2], q[3]);
+            quat_filter.update(an, ae, ad, gn, ge, gd, q);
         }
+
+        update_rpy(q[0], q[1], q[2], q[3]);
         return true;
     }
 
-    float getRoll() const { return b_ahrs ? rpy[0] : 0.f; }
-    float getPitch() const { return b_ahrs ? rpy[1] : 0.f; }
-    float getYaw() const { return b_ahrs ? rpy[2] : 0.f; }
+    float getRoll() const { return rpy[0]; }
+    float getPitch() const { return rpy[1]; }
+    float getYaw() const { return rpy[2]; }
 
-    float getEulerX() const { return b_ahrs ? rpy[0] : 0.f; }
-    float getEulerY() const { return b_ahrs ? -rpy[1] : 0.f; }
-    float getEulerZ() const { return b_ahrs ? -rpy[2] : 0.f; }
+    float getEulerX() const { return rpy[0]; }
+    float getEulerY() const { return -rpy[1]; }
+    float getEulerZ() const { return -rpy[2]; }
 
-    float getQuaternionW() const { return q[0]; }
     float getQuaternionX() const { return q[1]; }
     float getQuaternionY() const { return q[2]; }
     float getQuaternionZ() const { return q[3]; }
+    float getQuaternionW() const { return q[0]; }
 
     float getAcc(const uint8_t i) const { return (i < 3) ? a[i] : 0.f; }
     float getGyro(const uint8_t i) const { return (i < 3) ? g[i] : 0.f; }
@@ -336,59 +332,70 @@ private:
 
         // Configure Interrupts and Bypass Enable
         // Set interrupt pin active high, push-pull, hold interrupt pin level HIGH until interrupt cleared,
-        // clear INT_STATUS when INT_STATUS is read, and disable I2C_BYPASS_EN so additional chips
+        // clear INT_STATUS on any read operation, and disable I2C_BYPASS_EN so additional chips
         // cannot join the I2C bus.
         // If additional chips will be added to the I2C bus, set to 0x22 so all can be controlled by the Arduino as master
-        write_byte(INT_PIN_CFG, 0x20);
+        write_byte(INT_PIN_CFG, 0x30);
         write_byte(INT_ENABLE, 0x01); // Enable data ready (bit 0) interrupt
         delay(100);
     }
 
     void update_rpy(float qw, float qx, float qy, float qz)
     {
-        // Define output variables from updated quaternion---these are Tait-Bryan angles, commonly used in aircraft orientation.
-        // In this coordinate system, the positive z-axis is down toward Earth.
-        // Yaw is the angle between Sensor x-axis and Earth magnetic North (or true North if corrected for local declination, looking down on the sensor positive yaw is counterclockwise.
-        // Pitch is angle between sensor x-axis and Earth ground plane, toward the Earth is positive, up toward the sky is negative.
-        // Roll is angle between sensor y-axis and Earth ground plane, y-axis up is positive roll.
-        // These arise from the definition of the homogeneous rotation matrix constructed from quaternions.
-        // Tait-Bryan angles as well as Euler angles are non-commutative; that is, the get the correct orientation the rotations must be
-        // applied in the correct order which for this configuration is yaw, pitch, and then roll.
-        // For more see http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles which has additional links.
-        float a12, a22, a31, a32, a33; // rotation matrix coefficients for Euler angles and gravity components
-        a12 = 2.0f * (qx * qy + qw * qz);
-        a22 = qw * qw + qx * qx - qy * qy - qz * qz;
-        a31 = 2.0f * (qw * qx + qy * qz);
-        a32 = 2.0f * (qx * qz - qw * qy);
-        a33 = qw * qw - qx * qx - qy * qy + qz * qz;
-        rpy[0] = atan2f(a31, a33);
-        rpy[1] = -asinf(a32);
-        rpy[2] = atan2f(a12, a22);
-        rpy[0] *= 57.29577951;
-        rpy[1] *= 57.29577951;
-        rpy[2] *= 57.29577951;
-        if (rpy[2] >= +180.f)
+        // This arises from the definition of the homogeneous rotation matrix constructed from quaternions to euler angles.
+        // See https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_(in_3-2-1_sequence)_conversion
+        float sinr_cosp = 2 * ((qw * qx) + (qy * qz));
+        float cosr_cosp = 1 - (2 * ((qx * qx) + (qy * qy)));
+        float sinp = sqrt(1 + (2 * ((qw * qy) - (qx * qz))));
+        float cosp = sqrt(1 - (2 * ((qw * qy) - (qx * qz))));
+        float siny_cosp = 2 * ((qw * qz) + (qx * qy));
+        float cosy_cosp = 1 - (2 * ((qy * qy) + (qz * qz)));
+
+        rpy[0] = atan2f(sinr_cosp, cosr_cosp);
+        rpy[1] = (2 * atan2f(sinp, cosp)) - (PI / 2);
+        rpy[2] = atan2f(siny_cosp, cosy_cosp);
+
+        // Convert radian to degrees
+        rpy[0] *= RAD_TO_DEG;
+        rpy[1] *= RAD_TO_DEG;
+        rpy[2] *= RAD_TO_DEG;
+
+        // Limit roll to +/-180 degrees range
+        if (rpy[0] >= +180)
+            rpy[0] -= 360.f;
+        else if (rpy[0] <= -180)
+            rpy[0] += 360.f;
+
+        // Limit pitch to +/-90 degrees range
+        if (rpy[1] >= +90.f)
+            rpy[1] -= 180.f;
+        else if (rpy[1] < -90.f)
+            rpy[1] += 180.f;
+
+        // Limit yaw to +/-180 degrees range
+        if (rpy[2] >= +180)
             rpy[2] -= 360.f;
-        else if (rpy[2] < -180.f)
+        else if (rpy[2] <= -180)
             rpy[2] += 360.f;
 
-        lin_acc[0] = a[0] + a31;
-        lin_acc[1] = a[1] + a32;
-        lin_acc[2] = a[2] - a33;
+        // Convert to linear acceleration
+        lin_acc[0] = a[0] + (2 * ((qw * qy) + (qx * qz)));
+        lin_acc[1] = a[1] + (2 * ((qy * qz) - (qw * qx)));
+        lin_acc[2] = a[2] - ((qw * qw) - (qx * qx) - (qy * qy) - (qz * qz));
     }
 
     void update_accel_gyro()
     {
-        int16_t raw_acc_gyro_data[6];       // holds 12 bytes from the MPU6050 accel/gyro data register
-        read_accel_gyro(raw_acc_gyro_data); // INT cleared on any read
+        int16_t raw_acc_gyro_data[6]; // holds 16 bits in 2's complement from the MPU6050 accel/gyro data register
+        read_accel_gyro(raw_acc_gyro_data);
 
-        // Now we'll transform the acceleration value into actual g's
-        a[0] = ((float)raw_acc_gyro_data[0] - acc_bias[0]) * acc_resolution; // get actual g value, this depends on scale being set
+        // Transform the acceleration value into actual g's
+        a[0] = ((float)raw_acc_gyro_data[0] - acc_bias[0]) * acc_resolution; // get actual g value, this depends on the set resolution
         a[1] = ((float)raw_acc_gyro_data[1] - acc_bias[1]) * acc_resolution;
         a[2] = ((float)raw_acc_gyro_data[2] - acc_bias[2]) * acc_resolution;
 
-        // Transform the gyro values into actual degrees per second
-        g[0] = ((float)raw_acc_gyro_data[3] - gyro_bias[0]) * gyro_resolution; // get actual gyro value, this depends on scale being set
+        // Transform the gyro value into actual degrees per second
+        g[0] = ((float)raw_acc_gyro_data[3] - gyro_bias[0]) * gyro_resolution; // get actual gyro value, this depends on the set resolution
         g[1] = ((float)raw_acc_gyro_data[4] - gyro_bias[1]) * gyro_resolution;
         g[2] = ((float)raw_acc_gyro_data[5] - gyro_bias[2]) * gyro_resolution;
     }
@@ -401,14 +408,14 @@ private:
 
     void read_accel_gyro(int16_t *destination)
     {
-        uint8_t raw_data[14];                                                // x/y/z accel register data stored here
-        read_bytes(ACCEL_XOUT_H, 14, &raw_data[0]);                          // Read the 14 raw data registers into data array, register data 6 & 7 not used
-        destination[0] = ((int16_t)raw_data[0] << 8) | (int16_t)raw_data[1]; // Turn the MSB and LSB into a signed 16-bit value
-        destination[1] = ((int16_t)raw_data[2] << 8) | (int16_t)raw_data[3];
-        destination[2] = ((int16_t)raw_data[4] << 8) | (int16_t)raw_data[5];
-        destination[3] = ((int16_t)raw_data[8] << 8) | (int16_t)raw_data[9];
-        destination[4] = ((int16_t)raw_data[10] << 8) | (int16_t)raw_data[11];
-        destination[5] = ((int16_t)raw_data[12] << 8) | (int16_t)raw_data[13];
+        uint8_t raw_data[14];                                       // x/y/z accel register data stored here
+        read_bytes(ACCEL_XOUT_H, 14, &raw_data[0]);                 // Read the 14 raw data registers into data array, register data(temperature) 6 & 7 not used
+        destination[0] = ((int16_t)raw_data[0] << 8) | raw_data[1]; // Turn the MSB and LSB into a signed 16-bit value
+        destination[1] = ((int16_t)raw_data[2] << 8) | raw_data[3];
+        destination[2] = ((int16_t)raw_data[4] << 8) | raw_data[5];
+        destination[3] = ((int16_t)raw_data[8] << 8) | raw_data[9];
+        destination[4] = ((int16_t)raw_data[10] << 8) | raw_data[11];
+        destination[5] = ((int16_t)raw_data[12] << 8) | raw_data[13];
     }
 
     int16_t read_temperature_data()
@@ -498,13 +505,13 @@ private:
         for (uint16_t ii = 0; ii < packet_count; ii++)
         {
             int16_t accel_temp[3] = {0, 0, 0}, gyro_temp[3] = {0, 0, 0};
-            read_bytes(FIFO_R_W, 12, &data[0]);                           // read data for averaging
-            accel_temp[0] = (int16_t)(((int16_t)data[0] << 8) | data[1]); // Form signed 16-bit integer for each sample in FIFO
-            accel_temp[1] = (int16_t)(((int16_t)data[2] << 8) | data[3]);
-            accel_temp[2] = (int16_t)(((int16_t)data[4] << 8) | data[5]);
-            gyro_temp[0] = (int16_t)(((int16_t)data[6] << 8) | data[7]);
-            gyro_temp[1] = (int16_t)(((int16_t)data[8] << 8) | data[9]);
-            gyro_temp[2] = (int16_t)(((int16_t)data[10] << 8) | data[11]);
+            read_bytes(FIFO_R_W, 12, &data[0]);                  // read data for averaging
+            accel_temp[0] = (((int16_t)data[0] << 8) | data[1]); // Form signed 16-bit integer for each sample in FIFO
+            accel_temp[1] = (((int16_t)data[2] << 8) | data[3]);
+            accel_temp[2] = (((int16_t)data[4] << 8) | data[5]);
+            gyro_temp[0] = (((int16_t)data[6] << 8) | data[7]);
+            gyro_temp[1] = (((int16_t)data[8] << 8) | data[9]);
+            gyro_temp[2] = (((int16_t)data[10] << 8) | data[11]);
 
             a_bias[0] += (float)accel_temp[0]; // Sum individual signed 16-bit biases to get accumulated signed 32-bit biases
             a_bias[1] += (float)accel_temp[1];
@@ -522,11 +529,12 @@ private:
         g_bias[1] /= (float)packet_count;
         g_bias[2] /= (float)packet_count;
 
+        // Remove gravity from the z-axis accelerometer bias calculation
         if (a_bias[2] > 0L)
         {
             a_bias[2] -= (float)CALIB_ACCEL_SENSITIVITY;
-        } // Remove gravity from the z-axis accelerometer bias calculation
-        else
+        }
+        else if (a_bias[2] < 0L)
         {
             a_bias[2] += (float)CALIB_ACCEL_SENSITIVITY;
         }
@@ -548,15 +556,15 @@ private:
         for (int ii = 0; ii < 200; ii++)
         { // get average current values of gyro and acclerometer
 
-            read_bytes(ACCEL_XOUT_H, 6, &raw_data[0]);                       // Read the six raw data registers into data array
-            aAvg[0] += (int16_t)(((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
-            aAvg[1] += (int16_t)(((int16_t)raw_data[2] << 8) | raw_data[3]);
-            aAvg[2] += (int16_t)(((int16_t)raw_data[4] << 8) | raw_data[5]);
+            read_bytes(ACCEL_XOUT_H, 6, &raw_data[0]);              // Read the six raw data registers into data array
+            aAvg[0] += (((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
+            aAvg[1] += (((int16_t)raw_data[2] << 8) | raw_data[3]);
+            aAvg[2] += (((int16_t)raw_data[4] << 8) | raw_data[5]);
 
-            read_bytes(GYRO_XOUT_H, 6, &raw_data[0]);                        // Read the six raw data registers sequentially into data array
-            gAvg[0] += (int16_t)(((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
-            gAvg[1] += (int16_t)(((int16_t)raw_data[2] << 8) | raw_data[3]);
-            gAvg[2] += (int16_t)(((int16_t)raw_data[4] << 8) | raw_data[5]);
+            read_bytes(GYRO_XOUT_H, 6, &raw_data[0]);               // Read the six raw data registers sequentially into data array
+            gAvg[0] += (((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
+            gAvg[1] += (((int16_t)raw_data[2] << 8) | raw_data[3]);
+            gAvg[2] += (((int16_t)raw_data[4] << 8) | raw_data[5]);
         }
 
         for (int ii = 0; ii < 3; ii++)
@@ -573,15 +581,15 @@ private:
         for (int ii = 0; ii < 200; ii++)
         { // get average self-test values of gyro and acclerometer
 
-            read_bytes(ACCEL_XOUT_H, 6, &raw_data[0]);                         // Read the six raw data registers into data array
-            aSTAvg[0] += (int16_t)(((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
-            aSTAvg[1] += (int16_t)(((int16_t)raw_data[2] << 8) | raw_data[3]);
-            aSTAvg[2] += (int16_t)(((int16_t)raw_data[4] << 8) | raw_data[5]);
+            read_bytes(ACCEL_XOUT_H, 6, &raw_data[0]);                // Read the six raw data registers into data array
+            aSTAvg[0] += (((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
+            aSTAvg[1] += (((int16_t)raw_data[2] << 8) | raw_data[3]);
+            aSTAvg[2] += (((int16_t)raw_data[4] << 8) | raw_data[5]);
 
-            read_bytes(GYRO_XOUT_H, 6, &raw_data[0]);                          // Read the six raw data registers sequentially into data array
-            gSTAvg[0] += (int16_t)(((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
-            gSTAvg[1] += (int16_t)(((int16_t)raw_data[2] << 8) | raw_data[3]);
-            gSTAvg[2] += (int16_t)(((int16_t)raw_data[4] << 8) | raw_data[5]);
+            read_bytes(GYRO_XOUT_H, 6, &raw_data[0]);                 // Read the six raw data registers sequentially into data array
+            gSTAvg[0] += (((int16_t)raw_data[0] << 8) | raw_data[1]); // Turn the MSB and LSB into a signed 16-bit value
+            gSTAvg[1] += (((int16_t)raw_data[2] << 8) | raw_data[3]);
+            gSTAvg[2] += (((int16_t)raw_data[4] << 8) | raw_data[5]);
         }
 
         for (int ii = 0; ii < 3; ii++)
